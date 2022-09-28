@@ -28,6 +28,7 @@ from torch.testing._internal.common_methods_invocations import op_db
 from torch.testing._internal import opinfo
 from torch.testing._internal.common_dtype import all_types_and_complex_and
 from torch.testing._internal.common_modules import modules, module_db
+from torch.testing._internal.opinfo.core import SampleInput
 
 # For testing TestCase methods and torch.testing functions
 class TestTesting(TestCase):
@@ -1813,6 +1814,35 @@ class TestImports(TestCase):
             # fail, so just set CWD to this script's directory
             cwd=os.path.dirname(os.path.realpath(__file__)),).decode("utf-8")
         self.assertEquals(out, "")
+
+class TestOpInfos(TestCase):
+    def test_sample_input(self) -> None:
+        a, b, c, d, e = [object() for _ in range(5)]
+
+        # Construction with natural syntax
+        s = SampleInput(a, b, c, d=d, e=e)
+        assert s.input is a
+        assert s.args == (b, c)
+        assert s.kwargs == dict(d=d, e=e)
+
+        # Construction with explicit args and kwargs
+        s = SampleInput(a, args=(b,), kwargs=dict(c=c, d=d, e=e))
+        assert s.input is a
+        assert s.args == (b,)
+        assert s.kwargs == dict(c=c, d=d, e=e)
+
+        # Construction with a mixed form will error
+        with self.assertRaises(AssertionError):
+            s = SampleInput(a, b, c, args=(d, e))
+
+        with self.assertRaises(AssertionError):
+            s = SampleInput(a, b, c, kwargs=dict(d=d, e=e))
+
+        with self.assertRaises(AssertionError):
+            s = SampleInput(a, args=(b, c), d=d, e=e)
+
+        with self.assertRaises(AssertionError):
+            s = SampleInput(a, b, c=c, kwargs=dict(d=d, e=e))
 
 
 if __name__ == '__main__':
