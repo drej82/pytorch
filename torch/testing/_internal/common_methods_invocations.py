@@ -17621,9 +17621,15 @@ python_ref_db = [
         torch_opinfo_name="t",
     ),
     PythonRefInfo(
+        "_refs.unfold",
+        torch_opinfo_name="unfold",
+        supports_nvfuser=False,
+    ),
+    PythonRefInfo(
         "_refs.unfold_copy",
         torch_opinfo_name="unfold",
         supports_nvfuser=False,
+        supports_out=True,
     ),
     PythonRefInfo(
         "_refs.unsqueeze",
