@@ -104,6 +104,9 @@ TORCH_API std::shared_ptr<bool> getLifeHandleForLevel(int64_t level);
 // add_(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)
 TORCH_API bool isInplaceOp(const c10::FunctionSchema& schema);
 
+// Given the indices of unwrapped inputs and the schema, this returns the indices of any outputs that should remain unwrapped
+TORCH_API std::vector<int64_t> findAliasedOutputs(const FunctionSchema& schema, std::vector<int64_t> unwrapped_inputs);
+
 TORCH_API Tensor unwrapIfDead(const Tensor& tensor);
 
 // Pretty printers
@@ -115,6 +118,9 @@ TORCH_API std::ostream& operator<<(std::ostream& os, const std::vector<DynamicLa
 TORCH_API void setInplaceRequiresGradAllowed(bool allowed);
 TORCH_API bool getInplaceRequiresGradAllowed();
 
+// used to flag if this is in user code during (not from functorch setup code)
+TORCH_API void setDuringFunctorchTransform(bool during_transform);
+TORCH_API bool getDuringFunctorchTransform();
 
 }
 } // namespace at

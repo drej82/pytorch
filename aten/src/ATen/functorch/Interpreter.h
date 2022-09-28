@@ -139,7 +139,7 @@ struct Interpreter {
   const InterpreterMeta& meta() const { return meta_; }
 
   void process(const c10::OperatorHandle& op, torch::jit::Stack* stack);
-  void sendToNextInterpreter(const c10::OperatorHandle& op, torch::jit::Stack* stack);
+  void sendToNextInterpreter(const c10::OperatorHandle& op, torch::jit::Stack* stack, bool grad_special_case);
 
   void saveLocalDispatchKeySet(c10::impl::LocalDispatchKeySet keyset) {
     TORCH_INTERNAL_ASSERT(!savedLocalDispatchKeySet_.has_value());
@@ -173,6 +173,17 @@ struct Interpreter {
 //   args[i] = func(args[i])
 void foreachTensorInplace(std::vector<IValue>& args, int64_t begin, int64_t end,
     std::function<Tensor(const Tensor&)> func);
+
+// Applies the following for-loop:
+// for i in range(begin, end):
+//   if i in use_flag_relative:
+//     args[i] = func(args[i], i - begin, true)
+//   args[i] = func(args[i], i - begin)
+// NOTE: relative_skips must be sorted
+void foreachTensorInplaceWithFlag(std::vector<IValue>& args, int64_t begin, int64_t end,
+    std::vector<int64_t> use_flag_relative, std::function<Tensor(const Tensor&, bool)> func);
+
+std::vector<int64_t> findUnwrappedInputs(std::vector<IValue>& args, int64_t begin, int64_t end);
 
 DispatchKeySet keysToExcludeWhenEnteringDynamicLayer(TransformType key);
 
