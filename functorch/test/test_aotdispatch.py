@@ -588,6 +588,87 @@ class TestPartitioning(AOTTestCase):
             res = aot_mod(x)
         res.sum().backward()
 
+    def test_input_mutations_with_functionalization(self):
+        # Function takes in 4 total tensors, mutates 1 and 3, returns 2 and 4
+        def fn(tensor1, lst, tensor2):
+            a = tensor1
+            b = lst[0]
+            c = lst[1]
+            d = tensor2
+
+            a_view = a.view(-1)
+            a_view.add_(1)
+            c_view = c.view(-1)
+            c_view.add_(1)
+
+            return [b, b], d
+        args = [torch.ones(2), [torch.ones(2), torch.ones(2)], torch.ones(2)]
+        out = functorch.make_fx(functorch.experimental.functionalize(fn))(*args)
+        self.assertExpectedInline((out.code), """\
+
+
+
+def forward(self, tensor1, lst, tensor2):
+    tensor1_1, lst_1, lst_2, tensor2_1, = fx_pytree.tree_flatten_spec([tensor1, lst, tensor2], self._in_spec)
+    view = torch.ops.aten.view.default(tensor1_1, [-1])
+    add = torch.ops.aten.add.Tensor(view, 1);  view = None
+    view_1 = torch.ops.aten.view.default(lst_2, [-1])
+    add_1 = torch.ops.aten.add.Tensor(view_1, 1);  view_1 = None
+    view_2 = torch.ops.aten.view.default(add, [2]);  add = None
+    view_3 = torch.ops.aten.view.default(add_1, [2]);  add_1 = None
+    copy_ = torch.ops.aten.copy_.default(tensor1_1, view_2);  tensor1_1 = view_2 = None
+    copy__1 = torch.ops.aten.copy_.default(lst_2, view_3);  lst_2 = view_3 = None
+    return pytree.tree_unflatten([lst_1, lst_1, tensor2_1], self._out_spec)
+    """)
+
+        _ = move_input_mutations_into_epilogue(out)
+
+        # After calling move_input_mutations_into_epilogue,
+        # The graph also returns mutated inputs as outputs (two new outputs in this example)
+        self.assertExpectedInline((out.code), """\
+
+
+
+def forward(self, tensor1, lst, tensor2):
+    tensor1_1, lst_1, lst_2, tensor2_1, = fx_pytree.tree_flatten_spec([tensor1, lst, tensor2], self._in_spec)
+    view = torch.ops.aten.view.default(tensor1_1, [-1]);  tensor1_1 = None
+    add = torch.ops.aten.add.Tensor(view, 1);  view = None
+    view_1 = torch.ops.aten.view.default(lst_2, [-1]);  lst_2 = None
+    add_1 = torch.ops.aten.add.Tensor(view_1, 1);  view_1 = None
+    view_2 = torch.ops.aten.view.default(add, [2]);  add = None
+    view_3 = torch.ops.aten.view.default(add_1, [2]);  add_1 = None
+    return pytree.tree_unflatten([view_2, view_3, lst_1, lst_1, tensor2_1], self._out_spec)
+    """)
+
+
+        from unittest.mock import patch
+        with patch.object(functorch.compile.config, "use_functionalize", True):
+            with patch.object(functorch.compile.config, "use_fake_tensor", True):
+                functorch.compile.clear_compile_cache()
+                aot_autograd_fn = aot_function(fn, nop, nop)
+
+                inpt_expected = (torch.ones(2), [torch.ones(2), torch.ones(2)], torch.ones(2))
+                inpt_actual = (torch.ones(2), [torch.ones(2), torch.ones(2)], torch.ones(2))
+
+                # Mutate inputs
+                out_expected = fn(*inpt_expected)
+                out_actual = aot_autograd_fn(*inpt_actual)
+
+                for e, a in zip(out_expected, out_actual):
+                    self.assertEqual(e, a)
+                for e, a in zip(inpt_expected, inpt_actual):
+                    self.assertEqual(e, a)
+
+                # Mutate inputs again
+                out_expected = fn(*inpt_expected)
+                out_actual = aot_autograd_fn(*inpt_actual)
+
+                for e, a in zip(out_expected, out_actual):
+                    self.assertEqual(e, a)
+                for e, a in zip(inpt_expected, inpt_actual):
+                    self.assertEqual(e, a)
+
+
 class TestAOTModuleSimplified(AOTTestCase):
     def test_aot_module_simplified(self):
         class MockModule(torch.nn.Module):
